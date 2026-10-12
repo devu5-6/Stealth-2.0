@@ -74,6 +74,29 @@ function renderFormattedContent(container, markdownText) {
   });
 }
 
+// Convert model IDs to clean, concise display names in parentheses
+function formatModelShortName(modelId) {
+  if (!modelId) return 'Groq';
+  const id = modelId.toLowerCase();
+  if (id.includes('120b')) return 'GPT 120B';
+  if (id.includes('20b')) return 'GPT 20B';
+  if (id.includes('qwen') && (id.includes('27b') || id.includes('3.8'))) return 'Qwen 27B';
+  if (id.includes('qwen')) return 'Qwen';
+  if (id.includes('70b')) return 'Llama 70B';
+  if (id.includes('8b')) return 'Llama 8B';
+  if (id.includes('gemini')) {
+    const versionMatch = id.match(/gemini-(\d+(?:\.\d+)?)/i);
+    if (versionMatch) {
+      return `Gemini ${versionMatch[1]}`;
+    }
+    return 'Gemini';
+  }
+  if (id.includes('claude')) return 'Claude';
+  const parts = modelId.split('/');
+  const name = parts[parts.length - 1];
+  return name.length > 12 ? name.substring(0, 12) : name;
+}
+
 // DOM Elements
 const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
 const chatSidebar = document.getElementById('chatSidebar');
@@ -377,11 +400,14 @@ function appendMessageToDOM(msg, shouldScroll = true) {
     }
   } else {
     const isGeminiSolve = msg.source === 'gemini';
+    const rawModel = msg.model || (isGeminiSolve ? (appSettings.geminiVisionModel || 'gemini') : (appSettings.groqModel || 'Groq'));
+    const shortModelName = formatModelShortName(rawModel);
+
     bubble.innerHTML = `
       <div class="flex items-center justify-between text-[10px] text-emerald-400 font-bold uppercase tracking-wider pb-1.5 border-b border-white/10">
         <span class="flex items-center gap-1.5">
           <span class="text-cyan-400">⚡</span>
-          <span class="text-white font-extrabold tracking-wide">Copilot Solution (${isGeminiSolve ? 'Gemini' : 'Groq'})</span>
+          <span class="copilot-solution-title text-white font-extrabold tracking-wide">Copilot Solution (${shortModelName})</span>
         </span>
         <span class="text-slate-400 font-mono text-[9px]">${new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
       </div>
