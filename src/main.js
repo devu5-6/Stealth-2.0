@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, globalShortcut, desktopCapturer, screen, session } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import started from 'electron-squirrel-startup';
@@ -27,6 +27,7 @@ if (started) {
   app.quit();
 }
 
+// Disable GPU disk cache writing to prevent Windows file-lock errors on restart
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 
 let mainWindow;
@@ -50,6 +51,7 @@ const createWindow = () => {
     },
   });
 
+  // Default: Screen capture protection ON (invisible to screen shares/recorders)
   mainWindow.setContentProtection(true);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -59,6 +61,38 @@ const createWindow = () => {
   }
 };
 
+// --- Screen Capture IPC Handler ---
+ipcMain.handle('capture-screen', async () => {
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.size;
+
+    // High quality capture for reading code/problem text
+    const maxDimension = 1440;
+    const scale = Math.min(1, maxDimension / Math.max(width, height));
+    const targetWidth = Math.round(width * scale);
+    const targetHeight = Math.round(height * scale);
+
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: {
+        width: targetWidth,
+        height: targetHeight,
+      },
+    });
+
+    if (sources.length > 0) {
+      const image = sources[0].thumbnail.toJPEG(80);
+      return `data:image/jpeg;base64,${image.toString('base64')}`;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error capturing screen:', error);
+    return null;
+  }
+});
+
+// IPC Handlers
 ipcMain.handle('get-env', () => {
   return {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
@@ -86,14 +120,52 @@ ipcMain.on('close-window', () => {
 });
 
 app.whenReady().then(() => {
+  // CRITICAL: Handle getDisplayMedia permission for System Loopback Audio (Speaker/Friend)
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      callback({ video: sources[0], audio: 'loopback' });
+    }).catch(() => {
+      callback({});
+    });
+  });
+
   if (process.platform === 'darwin') {
     app.dock.hide();
   }
   createWindow();
 
+  // Register emergency hide/show toggle hotkey (Ctrl+Shift+X)
+  globalShortcut.register('CommandOrControl+Shift+X', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.showInactive();
+      }
+    }
+  });
+
+  // Global screen-snap hotkey (Ctrl+Shift+S)
+  globalShortcut.register('CommandOrControl+Shift+S', () => {
+    if (mainWindow) {
+      mainWindow.webContents.send('trigger-screen-capture');
+    }
+  });
+
+  // Global new chat hotkey (Ctrl+Shift+N)
+  globalShortcut.register('CommandOrControl+Shift+N', () => {
+    if (mainWindow) {
+      mainWindow.webContents.send('trigger-new-chat');
+    }
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on('window-all-closed', () => {
