@@ -554,6 +554,9 @@ async function handleScreenSnap() {
         base64Image,
         systemPrompt: DEV_SENIOR_SDE_PROMPT,
         model: appSettings.geminiVisionModel,
+        onModelSwitch: ({ fromModel, toModel }) => {
+          showAppNotification(`Snap rate limit on ${formatModelShortName(fromModel)}. Switched to ${formatModelShortName(toModel)}`, false);
+        },
       });
     } catch (geminiErr) {
       console.error('Gemini direct solve error:', geminiErr);
@@ -563,7 +566,7 @@ async function handleScreenSnap() {
       return;
     }
 
-    const { question, solution } = result;
+    const { question, solution, usedModel } = result;
 
     // Step 2: Store extracted question into thread as User message
     const userMsgId = 'msg_' + Date.now();
@@ -597,6 +600,7 @@ async function handleScreenSnap() {
       content: solution, // Stored as pure text for Groq follow-ups
       displayContent: solution,
       source: 'gemini',
+      model: usedModel || appSettings.geminiVisionModel || 'gemini-3.1-flash-lite',
       timestamp: Date.now(),
     };
     session.messages.push(assistantMsg);
@@ -676,18 +680,28 @@ async function runAssistantResponse(session) {
   isGenerating = true;
   currentAbortController = new AbortController();
 
+  let activeServingModel = appSettings.groqModel;
+
   const assistantMsgId = 'msg_' + Date.now();
   const assistantMsg = {
     id: assistantMsgId,
     role: 'assistant',
     content: '',
     displayContent: '',
+    model: activeServingModel,
     timestamp: Date.now(),
   };
 
   session.messages.push(assistantMsg);
 
   const assistantBubble = appendMessageToDOM(assistantMsg, true);
+  const titleSpan = assistantBubble.querySelector('.copilot-solution-title');
+  const updateSolutionTitle = (modelId) => {
+    if (titleSpan && modelId) {
+      titleSpan.textContent = `Copilot Solution (${formatModelShortName(modelId)})`;
+    }
+  };
+
   const contentContainer = assistantBubble.querySelector('.answer-content');
   contentContainer.innerHTML = '<span class="text-cyan-400 font-medium animate-pulse text-[11px] flex items-center gap-1.5"><span>⚡</span> <span>Computing optimal solution with Groq...</span></span>';
 
@@ -702,17 +716,37 @@ async function runAssistantResponse(session) {
       model: appSettings.groqModel,
       messages: session.messages.slice(0, -1),
       signal: currentAbortController.signal,
+      onModelSwitch: ({ fromModel, toModel, reason }) => {
+        activeServingModel = toModel;
+        assistantMsg.model = toModel;
+        updateSolutionTitle(toModel);
+        console.warn(`[Auto-Fallback] Switched from ${fromModel} to ${toModel}:`, reason);
+        if (currentChatBadge) {
+          currentChatBadge.textContent = `${toModel}`;
+        }
+        showAppNotification(`Rate limit on ${fromModel}. Switched to ${toModel}`, false);
+      },
       onReasoning: (accumulatedReasoning) => {
         contentContainer.innerHTML = `<div class="p-2 bg-indigo-950/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-[11px] font-mono leading-relaxed max-h-24 overflow-y-auto mb-2"><div class="text-[9px] uppercase font-bold text-indigo-400 mb-1 flex items-center gap-1"><span>🧠</span> <span>Dev Thinking...</span></div>${escapeHtml(accumulatedReasoning.slice(-180))}...</div>`;
         scrollToBottom();
       },
-      onChunk: (accumulated) => {
+      onChunk: (accumulated, delta, usedModel) => {
+        if (usedModel) {
+          activeServingModel = usedModel;
+          assistantMsg.model = usedModel;
+          updateSolutionTitle(usedModel);
+        }
         assistantMsg.content = accumulated;
         assistantMsg.displayContent = accumulated;
         renderFormattedContent(contentContainer, accumulated);
         scrollToBottom();
       },
-      onComplete: (finalText) => {
+      onComplete: (finalText, usedModel) => {
+        if (usedModel) {
+          activeServingModel = usedModel;
+          assistantMsg.model = usedModel;
+          updateSolutionTitle(usedModel);
+        }
         assistantMsg.content = finalText;
         assistantMsg.displayContent = finalText;
         renderFormattedContent(contentContainer, finalText);
@@ -731,7 +765,7 @@ async function runAssistantResponse(session) {
   } finally {
     isGenerating = false;
     currentAbortController = null;
-    if (currentChatBadge) currentChatBadge.textContent = `${appSettings.groqModel || 'Groq'}`;
+    if (currentChatBadge) currentChatBadge.textContent = `${activeServingModel || appSettings.groqModel || 'Groq'}`;
     resetStatusDot();
     saveSessionsToStorage();
   }
