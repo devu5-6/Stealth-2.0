@@ -31,8 +31,8 @@ STRICT ROUTING RULES:
 - Bullets 1-4: Action plan (Triage, Strategy, Execution, Resilience).
 - Bullets 5-6: Real-world anchor (Artifex/Leapcraft) + Metric outcome.
 
-[5] SYS DESIGN / MCQ:
-- Direct answer/choice FIRST.
+[5] SYS DESIGN/MCQ:
+- Direct answer FIRST.
 - EXACTLY 5 simple bullets.`;
 
 /**
