@@ -83,10 +83,6 @@ export async function solveQuestionFromScreenshot({
     }
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   const promptText = `${systemPrompt || ''}
 
 TASK:
@@ -103,50 +99,95 @@ Output your response strictly using these two section markers:
 ===SOLUTION===
 [Your full optimal solution, JavaScript code, and bullet-point explanation following the rules]`;
 
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: promptText },
-              { inlineData: inlineImage },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 2500,
+  let lastError = null;
+
+  for (let i = 0; i < candidateModels.length; i++) {
+    const currentModel = candidateModels[i];
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: promptText },
+                { inlineData: inlineImage },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 2500,
+          },
+        }),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API Error (${response.status}): ${errorText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        const errorMsg = `Gemini API Error (${response.status}): ${errorText}`;
+        if (i < candidateModels.length - 1) {
+          const nextModel = candidateModels[i + 1];
+          console.warn(`[Gemini Fallback] ${currentModel} failed (${response.status}). Retrying with ${nextModel}...`);
+          if (onModelSwitch) {
+            onModelSwitch({ fromModel: currentModel, toModel: nextModel, reason: errorMsg });
+          }
+          continue;
+        }
+        throw new Error(errorMsg);
+      }
+
+      const result = await response.json();
+      const rawText = extractGeminiText(result);
+
+      if (!rawText) {
+        throw new Error('Gemini returned an empty response for this screenshot.');
+      }
+
+      const parsed = parseQuestionAndSolution(rawText);
+      return {
+        ...parsed,
+        usedModel: currentModel,
+      };
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        const timeoutMsg = `Gemini solve request timed out after ${Math.round(timeoutMs / 1000)}s`;
+        if (i < candidateModels.length - 1) {
+          const nextModel = candidateModels[i + 1];
+          console.warn(`[Gemini Fallback] ${currentModel} timed out. Retrying with ${nextModel}...`);
+          if (onModelSwitch) {
+            onModelSwitch({ fromModel: currentModel, toModel: nextModel, reason: timeoutMsg });
+          }
+          continue;
+        }
+        throw new Error(timeoutMsg);
+      }
+
+      lastError = error;
+      if (i < candidateModels.length - 1) {
+        const nextModel = candidateModels[i + 1];
+        console.warn(`[Gemini Fallback] Error on ${currentModel}: ${error.message}. Retrying with ${nextModel}...`);
+        if (onModelSwitch) {
+          onModelSwitch({ fromModel: currentModel, toModel: nextModel, reason: error.message });
+        }
+        continue;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
+  }
 
-    const result = await response.json();
-    const rawText = extractGeminiText(result);
-
-    if (!rawText) {
-      throw new Error('Gemini returned an empty response for this screenshot.');
-    }
-
-    return parseQuestionAndSolution(rawText);
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      throw new Error(`Gemini solve request timed out after ${Math.round(timeoutMs / 1000)}s`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
+  if (lastError) {
+    throw lastError;
   }
 }
 
