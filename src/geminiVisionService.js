@@ -47,15 +47,23 @@ function parseQuestionAndSolution(rawText) {
   };
 }
 
+export const DEFAULT_GEMINI_FALLBACK_MODELS = [
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
+];
+
 /**
  * Directly extracts and SOLVES the problem from screenshot using Gemini Vision
  * Uses Dev Shankar's Senior SDE guidelines (JavaScript-first, test run, strict bullet format)
+ * Includes automatic fallback across verified Gemini vision models (3.1-flash-lite -> 2.5-flash).
  */
 export async function solveQuestionFromScreenshot({
   apiKey,
   base64Image,
   systemPrompt,
   model = DEFAULT_GEMINI_VISION_MODEL,
+  fallbackModels = DEFAULT_GEMINI_FALLBACK_MODELS,
+  onModelSwitch,
   timeoutMs = 45000,
 }) {
   if (!apiKey) {
@@ -63,6 +71,18 @@ export async function solveQuestionFromScreenshot({
   }
 
   const inlineImage = extractInlineImage(base64Image);
+
+  // Build candidate vision models without duplicates
+  const candidateModels = [];
+  if (model) candidateModels.push(model);
+  if (Array.isArray(fallbackModels)) {
+    for (const fb of fallbackModels) {
+      if (fb && !candidateModels.includes(fb)) {
+        candidateModels.push(fb);
+      }
+    }
+  }
+
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
