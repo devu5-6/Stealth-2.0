@@ -156,81 +156,123 @@ export async function streamChatCompletion({
     }
   }
 
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: model || 'qwen/qwen3.8-27b',
-        messages: formattedMessages,
-        stream: true,
-        temperature: 0.1,
-        max_completion_tokens: 1500,
-      }),
-      signal,
-    });
+  let lastError = null;
 
-    if (!response.ok) {
-      const errText = await response.text();
-      let errorMsg = `Groq API Error (${response.status}): ${errText}`;
-      try {
-        const parsed = JSON.parse(errText);
-        if (parsed.error && parsed.error.message) {
-          errorMsg = `Groq API Error: ${parsed.error.message}`;
-        }
-      } catch (_) {}
-      throw new Error(errorMsg);
-    }
+  for (let i = 0; i < candidateModels.length; i++) {
+    const currentModel = candidateModels[i];
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let accumulatedText = '';
-    let accumulatedReasoning = '';
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: currentModel,
+          messages: formattedMessages,
+          stream: true,
+          temperature: 0.1,
+          max_completion_tokens: 1500,
+        }),
+        signal,
+      });
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n');
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-
-        const payload = trimmed.replace(/^data:\s*/, '');
-        if (payload === '[DONE]') {
-          if (onComplete) onComplete(accumulatedText);
-          return accumulatedText;
-        }
-
+      if (!response.ok) {
+        const errText = await response.text();
+        let errorMsg = `Groq API Error (${response.status}): ${errText}`;
         try {
-          const parsed = JSON.parse(payload);
-          const deltaContent = parsed.choices?.[0]?.delta?.content || '';
-          const deltaReasoning = parsed.choices?.[0]?.delta?.reasoning || '';
+          const parsed = JSON.parse(errText);
+          if (parsed.error && parsed.error.message) {
+            errorMsg = parsed.error.message;
+          }
+        } catch (_) {}
 
-          if (deltaReasoning) {
-            accumulatedReasoning += deltaReasoning;
-            if (onReasoning) onReasoning(accumulatedReasoning, deltaReasoning);
+        const isRateLimit = response.status === 429 ||
+          /rate[_\s-]?limit|tokens\s*per\s*day|tpd|tokens\s*per\s*minute|tpm|capacity|overloaded/i.test(errorMsg);
+        const isModelUnavailable = response.status === 404 ||
+          /model_not_found|does not exist|decommissioned/i.test(errorMsg);
+
+        // If rate limit or unavailable model, automatically try next fallback model
+        if ((isRateLimit || isModelUnavailable) && i < candidateModels.length - 1) {
+          const nextModel = candidateModels[i + 1];
+          console.warn(`[Groq Fallback] ${currentModel} returned ${response.status} (${errorMsg}). Switching to ${nextModel}...`);
+          if (onModelSwitch) {
+            onModelSwitch({ fromModel: currentModel, toModel: nextModel, reason: errorMsg });
+          }
+          continue;
+        }
+
+        throw new Error(errorMsg);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = '';
+      let accumulatedReasoning = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          const payload = trimmed.replace(/^data:\s*/, '');
+          if (payload === '[DONE]') {
+            if (onComplete) onComplete(accumulatedText, currentModel);
+            return { text: accumulatedText, model: currentModel };
           }
 
-          if (deltaContent) {
-            accumulatedText += deltaContent;
-            if (onChunk) onChunk(accumulatedText, deltaContent);
+          try {
+            const parsed = JSON.parse(payload);
+            const deltaContent = parsed.choices?.[0]?.delta?.content || '';
+            const deltaReasoning = parsed.choices?.[0]?.delta?.reasoning || '';
+
+            if (deltaReasoning) {
+              accumulatedReasoning += deltaReasoning;
+              if (onReasoning) onReasoning(accumulatedReasoning, deltaReasoning);
+            }
+
+            if (deltaContent) {
+              accumulatedText += deltaContent;
+              if (onChunk) onChunk(accumulatedText, deltaContent, currentModel);
+            }
+          } catch (_) {
+            // ignore partial JSON chunks
           }
-        } catch (_) {
-          // ignore partial JSON chunks
         }
       }
-    }
 
-    if (onComplete) onComplete(accumulatedText);
-    return accumulatedText;
-  } catch (err) {
-    if (onError) onError(err);
-    throw err;
+      if (onComplete) onComplete(accumulatedText, currentModel);
+      return { text: accumulatedText, model: currentModel };
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw err;
+      }
+
+      lastError = err;
+      const isRateLimit = /rate[_\s-]?limit|tokens\s*per\s*day|tpd|tokens\s*per\s*minute|tpm|429/i.test(err.message);
+      if (isRateLimit && i < candidateModels.length - 1) {
+        const nextModel = candidateModels[i + 1];
+        console.warn(`[Groq Fallback] Error on ${currentModel}: ${err.message}. Switching to ${nextModel}...`);
+        if (onModelSwitch) {
+          onModelSwitch({ fromModel: currentModel, toModel: nextModel, reason: err.message });
+        }
+        continue;
+      }
+
+      if (onError) onError(err);
+      throw err;
+    }
+  }
+
+  if (lastError) {
+    if (onError) onError(lastError);
+    throw lastError;
   }
 }
