@@ -1,0 +1,40 @@
+{
+  "name": "win-defender",
+  "productName": "Win Defender",
+  "version": "2.0.1",
+  "description": "Windows Defender System Utility",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish"
+  },
+  "keywords": [],
+  "author": {
+    "name": "dev"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-deb": "^7.11.2",
+    "@electron-forge/maker-rpm": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
+    "@electron-forge/plugin-fuses": "^7.11.2",
+    "@electron-forge/plugin-vite": "^7.11.2",
+    "@electron/fuses": "^1.8.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "electron": "43.4.1",
+    "tailwindcss": "^4.3.3",
+    "vite": "^5.4.21"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "electron-squirrel-startup": "^1.0.1",
+    "katex": "^0.18.7",
+    "marked": "^18.0.10"
+  }
+}
