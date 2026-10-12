@@ -96,7 +96,7 @@ ipcMain.handle('capture-screen', async () => {
 ipcMain.handle('get-env', () => {
   return {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-    GEMINI_VISION_MODEL: process.env.GEMINI_VISION_MODEL || 'gemini-3.1-flash-lite',
+    GEMINI_VISION_MODEL: process.env.GEMINI_VISION_MODEL ,
     GROQ_API_KEY: process.env.GROQ_API_KEY || '',
     GROQ_MODEL: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
     DEEPGRAM_API_KEY: process.env.DEEPGRAM_API_KEY || '',
