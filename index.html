@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Win Defender</title>
+  <link rel="stylesheet" href="./src/index.css" />
+</head>
+
+<body class="w-screen h-screen p-1 flex flex-col select-none overflow-hidden">
+
+  <!-- Main 2026 HUD Glass Container -->
+  <div id="appRoot"
+    class="relative w-full h-full bg-[#07090e]/80 backdrop-blur-3xl rounded-2xl border border-white/12 shadow-[0_16px_50px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.18)] flex flex-col overflow-hidden text-slate-100 transition-all duration-300">
+
+    <!-- Draggable Top Control Strip (Ultra-Thin) -->
+    <header class="drag-region flex items-center justify-between px-2.5 py-1.5 bg-black/40 border-b border-white/10 text-xs backdrop-blur-md">
+      
+      <!-- Brand & Status -->
+      <div class="flex items-center gap-2">
+        <div class="relative flex items-center justify-center">
+          <span id="statusPing" class="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-emerald-400 opacity-60"></span>
+          <span id="statusDot" class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400 shadow-[0_0_8px_#34d399] transition-all"></span>
+        </div>
+        <span class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">2.0</span>
+        <div id="sessionHeaderBadge" class="hidden sm:inline-flex items-center text-[9px] font-medium text-slate-300 px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/10 truncate max-w-[110px]">
+          <span id="headerChatTitle" class="truncate">New Problem</span>
+        </div>
+      </div>
+
+      <!-- Non-draggable Actions Strip -->
+      <div class="no-drag-region flex items-center gap-1">
+        
+        <!-- Screen Snap Button -->
+        <button id="snapBtn"
+          class="text-[10.5px] px-2 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold shadow-[0_0_12px_rgba(79,70,229,0.35)] border border-indigo-400/30 transition-all duration-150 active:scale-95 flex items-center gap-1"
+          title="Snap Screen & Solve DSA Question (Ctrl+Shift+S)">
+          <span>📷</span> <span>Snap</span>
+        </button>
+
+        <!-- Audio Source Toggle (Friend / Recruiter vs Me) -->
+        <button id="audioSourceBtn"
+          class="text-[10.5px] px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-semibold shadow-[0_0_8px_rgba(245,158,11,0.2)] transition-all duration-150 active:scale-95 flex items-center gap-1"
+          title="Toggle between Hearing Friend (System Loopback) or Me (Mic)">
+          <span>🔊</span> <span id="audioSourceLabel">Friend</span>
+        </button>
+
+        <!-- Live Voice Listen Toggle -->
+        <button id="micBtn"
+          class="text-[10.5px] px-2 py-0.5 rounded-md bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold shadow-[0_0_10px_rgba(6,182,212,0.3)] border border-cyan-400/30 transition-all duration-150 active:scale-95 flex items-center gap-1"
+          title="Start / Stop Live Speech Recognition">
+          <span>🎙️</span> <span id="micLabel">Start</span>
+        </button>
+
+        <!-- Chats Drawer Toggle Button -->
+        <button id="toggleSidebarBtn"
+          class="text-[10.5px] px-2 py-0.5 rounded-md bg-white/[0.06] hover:bg-white/[0.14] text-slate-200 border border-white/10 font-medium transition-all duration-150 active:scale-95 flex items-center gap-1"
+          title="Switch Previous Problem Chats">
+          <span>📁</span> <span>Chats</span>
+        </button>
+
+        <!-- New Chat Button -->
+        <button id="newChatTopBtn"
+          class="text-[10.5px] px-2 py-0.5 rounded-md bg-emerald-600/80 hover:bg-emerald-500 text-white font-semibold border border-emerald-400/40 shadow-[0_0_8px_rgba(16,185,129,0.3)] transition-all duration-150 active:scale-95"
+          title="Start Fresh Context (Ctrl+Shift+N)">
+          + New
+        </button>
+
+        <!-- Opacity Slider -->
+        <div class="flex items-center ml-0.5 px-1 py-0.5 rounded-md bg-white/[0.04] border border-white/5" title="Window Transparency">
+          <input type="range" id="opacitySlider" min="0.2" max="1" step="0.05" value="1"
+            class="w-9 h-1 accent-cyan-400 cursor-pointer" />
+        </div>
+
+        <!-- Window Actions -->
+        <div class="flex items-center gap-0.5 ml-0.5">
+          <button id="minBtn"
+            class="w-4.5 h-4.5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 text-[11px] transition"
+            title="Minimize">−</button>
+          <button id="closeBtn"
+            class="w-4.5 h-4.5 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-rose-600/80 text-[11px] transition"
+            title="Quit">✕</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Collapsible Chats Sidebar / Drawer -->
+    <div id="chatSidebar"
+      class="hidden p-2.5 bg-[#0a0d14]/95 border-b border-white/12 text-xs space-y-2 z-20 max-h-56 overflow-y-auto backdrop-blur-2xl animate-fade-in shadow-2xl">
+      <div class="flex items-center justify-between px-1 pb-1.5 border-b border-white/10">
+        <span class="text-[10px] uppercase font-bold text-slate-300 tracking-wider flex items-center gap-1">
+          <span>📁</span> <span>Active Problem Threads</span>
+        </span>
+        <button id="newChatSidebarBtn" class="text-[10px] px-2.5 py-0.5 rounded-md bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold hover:brightness-110 shadow-sm transition active:scale-95">+ New Thread</button>
+      </div>
+      <div id="chatSessionsList" class="space-y-1">
+        <!-- Session items injected here -->
+      </div>
+    </div>
+
+    <!-- Live Transcript & Audio Visualizer Banner -->
+    <div class="px-3.5 py-1.5 bg-white/[0.03] border-b border-white/8 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 overflow-hidden flex-1 min-w-0 mr-1">
+        <!-- Animated Waveform Bars (Active Only When Listening) -->
+        <div id="audioVisualizer" class="flex items-center gap-0.5 h-3.5 shrink-0 opacity-40 transition-opacity">
+          <span class="w-0.5 h-1 rounded-full bg-cyan-400 wave-bar wave-bar-1"></span>
+          <span class="w-0.5 h-1 rounded-full bg-cyan-400 wave-bar wave-bar-2"></span>
+          <span class="w-0.5 h-1 rounded-full bg-cyan-400 wave-bar wave-bar-3"></span>
+          <span class="w-0.5 h-1 rounded-full bg-cyan-400 wave-bar wave-bar-4"></span>
+        </div>
+        <span id="liveTranscript" class="text-xs text-white/90 font-mono italic truncate">Ready to transcribe speech...</span>
+      </div>
+
+      <div class="flex items-center gap-1.5 shrink-0">
+        <!-- Send Spoken Question Immediately (Up Arrow Icon Only) -->
+        <button id="sendVoiceNowBtn"
+          class="w-5 h-5 rounded-md bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-300 hover:text-white border border-cyan-400/40 text-[11px] font-bold transition-all active:scale-95 flex items-center justify-center shadow-[0_0_8px_rgba(6,182,212,0.25)]"
+          title="Send transcribed question immediately without waiting">
+          ↑
+        </button>
+        <span id="currentChatBadge" class="text-[9px] font-mono text-slate-400 shrink-0 hidden sm:inline-block">Groq LLM</span>
+      </div>
+    </div>
+
+    <!-- Inline Error/Status Banner (Below Hearing, full message with word-wrap, 2-sec auto-dismiss) -->
+    <div id="errorNotificationBanner" class="hidden px-3.5 py-1.5 bg-rose-950/90 border-b border-rose-500/40 text-[11px] text-rose-200 font-mono leading-snug break-words transition-all duration-200 z-10 shadow-lg">
+      <span id="errorNotificationText"></span>
+    </div>
+
+    <!-- Real-Time DSA Stream Cards & Messages Feed Container -->
+    <div class="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+      <main id="messagesContainer" class="flex-1 p-3.5 overflow-y-auto space-y-3.5 text-xs leading-relaxed select-text">
+        <!-- Default Ready Card -->
+        <div class="p-4 bg-white/[0.04] rounded-xl border border-white/10 backdrop-blur-md text-slate-300 space-y-2 shadow-lg">
+          <div class="flex items-center gap-2 text-white font-bold text-xs">
+            <span class="text-cyan-400">✨</span> Dev • Senior SDE Copilot Ready
+          </div>
+          <p class="text-[11px] text-slate-300 leading-relaxed">
+            • Press <strong class="text-white bg-white/10 px-1.5 py-0.5 rounded border border-white/15">Ctrl+Shift+S</strong> or click <strong class="text-cyan-300 font-semibold">📷 Snap</strong> to extract problem text (Strings, Arrays, Trees, Graphs, Lists, System Design) & stream solutions.<br/>
+            • Click <strong class="text-cyan-300 font-semibold">🎙️ Start</strong> for live speech-to-solution stream.<br/>
+            • Ask follow-ups with full contextual thread memory in simple, conversational English.
+          </p>
+        </div>
+      </main>
+
+      <!-- Floating Navigation Controls: Up (previous answer) & Down (latest answer) -->
+      <div id="scrollNavGroup" class="hidden absolute bottom-3 right-3 z-30 flex items-center gap-1.5 backdrop-blur-md bg-black/60 p-1 rounded-full border border-white/15 shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
+        <button id="navPrevAnsBtn"
+          class="px-2.5 py-1 rounded-full bg-slate-800/90 hover:bg-slate-700 text-cyan-300 hover:text-white text-[11px] font-semibold border border-white/10 transition-all active:scale-95 flex items-center gap-1"
+          title="Jump to where the previous (2nd to last) answer starts">
+          <span>↑</span> <span>Prev Ans</span>
+        </button>
+        <button id="navLatestAnsBtn"
+          class="px-2.5 py-1 rounded-full bg-cyan-600/90 hover:bg-cyan-500 text-white text-[11px] font-semibold border border-cyan-400/40 shadow-[0_0_12px_rgba(6,182,212,0.4)] transition-all active:scale-95 flex items-center gap-1"
+          title="Jump to where the latest answer starts">
+          <span>↓</span> <span>Latest Ans</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick Action Chips for Fast Follow-ups -->
+    <div class="px-3 py-1.5 bg-black/40 border-t border-white/8 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+      <span class="text-[9px] text-slate-400 uppercase font-black tracking-wider shrink-0">Dev:</span>
+      <button class="quick-prompt-btn text-[10px] px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-cyan-500/20 hover:border-cyan-400/50 text-slate-200 hover:text-cyan-300 border border-white/10 shrink-0 transition-all active:scale-95"
+        data-prompt="Explain the core intuition and show the clean, production-ready code solution.">⚡ Optimal Code</button>
+      <button class="quick-prompt-btn text-[10px] px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-cyan-500/20 hover:border-cyan-400/50 text-slate-200 hover:text-cyan-300 border border-white/10 shrink-0 transition-all active:scale-95"
+        data-prompt="How would you approach this problem using core DSA patterns (Trees, Graphs, Linked Lists, or Arrays)?">🌳 DSA Pattern</button>
+      <button class="quick-prompt-btn text-[10px] px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-cyan-500/20 hover:border-cyan-400/50 text-slate-200 hover:text-cyan-300 border border-white/10 shrink-0 transition-all active:scale-95"
+        data-prompt="How would Dev design this at scale? Walk through the high-level architecture, caching, database choice, and bottlenecks.">🏗️ System Design</button>
+      <button class="quick-prompt-btn text-[10px] px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-cyan-500/20 hover:border-cyan-400/50 text-slate-200 hover:text-cyan-300 border border-white/10 shrink-0 transition-all active:scale-95"
+        data-prompt="Can we optimize this further in terms of time complexity or auxiliary space?">🚀 Optimize</button>
+      <button class="quick-prompt-btn text-[10px] px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-cyan-500/20 hover:border-cyan-400/50 text-slate-200 hover:text-cyan-300 border border-white/10 shrink-0 transition-all active:scale-95"
+        data-prompt="Walk through the code step-by-step in simple, conversational English without textbook jargon.">💡 Simple Walkthrough</button>
+      <button class="quick-prompt-btn text-[10px] px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-cyan-500/20 hover:border-cyan-400/50 text-slate-200 hover:text-cyan-300 border border-white/10 shrink-0 transition-all active:scale-95"
+        data-prompt="Walk through a step-by-step dry run with a concrete example input.">🧪 Dry Run</button>
+      <button class="quick-prompt-btn text-[10px] px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-cyan-500/20 hover:border-cyan-400/50 text-slate-200 hover:text-cyan-300 border border-white/10 shrink-0 transition-all active:scale-95"
+        data-prompt="Answer this behavioral question as Dev (Senior SDE) using the STAR framework in 5-6 simple, conversational points.">🤝 Behavioral</button>
+    </div>
+
+    <!-- Floating Follow-up Input Bar -->
+    <div class="p-2.5 bg-black/60 border-t border-white/10 flex items-center gap-2">
+      <textarea id="promptInput" rows="1"
+        placeholder="Ask follow-up in context (or press Enter)..."
+        class="flex-1 bg-white/[0.06] text-white placeholder-slate-400 border border-white/15 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/40 resize-none font-sans leading-relaxed transition shadow-inner"></textarea>
+      <button id="sendBtn"
+        class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold shadow-[0_0_14px_rgba(6,182,212,0.45)] border border-cyan-400/40 transition-all active:scale-95 shrink-0 flex items-center gap-1">
+        <span>Send</span> <span>⚡</span>
+      </button>
+    </div>
+
+  </div>
+
+  <script type="module" src="/src/renderer.js"></script>
+</body>
+
+</html>
