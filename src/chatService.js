@@ -98,13 +98,22 @@ export function buildOptimizedContext(rawMessages, maxRecentTurns = 6) {
   return result;
 }
 
+export const DEFAULT_GROQ_FALLBACK_MODELS = [
+  'qwen/qwen3.8-27b',
+  'openai/gpt-oss-20b',
+  'openai/gpt-oss-120b',
+];
+
 /**
  * Streams completion from Groq API with reasoning and content extraction
+ * Features automatic resilient fallback to secondary models if rate limits (TPD/TPM/429) are encountered.
  * @param {Object} params
  * @param {string} params.apiKey
  * @param {string} [params.baseUrl]
  * @param {string} [params.model]
+ * @param {Array<string>} [params.fallbackModels]
  * @param {Array} params.messages
+ * @param {Function} [params.onModelSwitch]
  * @param {Function} [params.onChunk]
  * @param {Function} [params.onReasoning]
  * @param {Function} [params.onError]
@@ -114,8 +123,10 @@ export function buildOptimizedContext(rawMessages, maxRecentTurns = 6) {
 export async function streamChatCompletion({
   apiKey,
   baseUrl = 'https://api.groq.com/openai/v1',
-  model = 'qwen/qwen3.8-27b',
+  model = 'llama-3.3-70b-versatile',
+  fallbackModels = DEFAULT_GROQ_FALLBACK_MODELS,
   messages,
+  onModelSwitch,
   onChunk,
   onReasoning,
   onError,
@@ -133,6 +144,17 @@ export async function streamChatCompletion({
     { role: 'system', content: DEV_SENIOR_SDE_PROMPT },
     ...sanitizedHistory,
   ];
+
+  // Build candidate models without duplicates
+  const candidateModels = [];
+  if (model) candidateModels.push(model);
+  if (Array.isArray(fallbackModels)) {
+    for (const fb of fallbackModels) {
+      if (fb && !candidateModels.includes(fb)) {
+        candidateModels.push(fb);
+      }
+    }
+  }
 
   try {
     const response = await fetch(endpoint, {
